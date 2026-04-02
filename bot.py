@@ -3,6 +3,8 @@ import pandas as pd
 import requests
 from datetime import datetime
 
+from flask import Flask, request
+
 app = Flask(__name__)
 
 @app.route("/")
@@ -12,7 +14,9 @@ def home():
 @app.route("/data", methods=["POST"])
 def data():
     result = request.json["result"]
-    print(f"🎲 Recibido: {result}")
+
+    print(f"🎲 Recibido: {result}", flush=True)
+
     return {"status": "ok"}
 
 app.run(host="0.0.0.0", port=8080)
