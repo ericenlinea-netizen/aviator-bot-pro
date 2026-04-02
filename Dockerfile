@@ -1,29 +1,36 @@
-FROM python:3.10-slim
+FROM python:3.10
 
-# Instalar dependencias del sistema
+# Instalar Chrome + dependencias correctas
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     curl \
-    chromium \
-    chromium-driver \
-    libglib2.0-0 \
-    libnss3 \
-    libgconf-2-4 \
-    libfontconfig1 \
-    libx11-6 \
-    libxext6 \
-    libxrender1 \
-    libxi6 \
-    libxtst6 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libgbm1 \
+    gnupg \
+    ca-certificates \
+    fonts-liberation \
+    libappindicator3-1 \
     libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libnspr4 \
+    libnss3 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    xdg-utils \
+    --no-install-recommends
+
+# Instalar Google Chrome REAL (mejor que chromium)
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+RUN apt-get install -y ./google-chrome-stable_current_amd64.deb
+
+# Limpiar
+RUN rm google-chrome-stable_current_amd64.deb
 
 WORKDIR /app
 
