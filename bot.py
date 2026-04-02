@@ -13,8 +13,8 @@ def home():
 # CONFIG
 # =========================
 
-TELEGRAM_TOKEN = "TU_TOKEN"
-TELEGRAM_CHAT_ID = "TU_CHAT_ID"
+TELEGRAM_TOKEN = "8750698916:AAEgYA-AQqienTfKYd8GzGTBj7ypjrPz_UM"
+TELEGRAM_CHAT_ID = "5019372975"
 
 balance = 100
 
