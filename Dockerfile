@@ -1,6 +1,5 @@
-FROM python:3.10
+FROM python:3.10-bullseye
 
-# Instalar Chrome + dependencias correctas
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
@@ -25,11 +24,10 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     --no-install-recommends
 
-# Instalar Google Chrome REAL (mejor que chromium)
+# Instalar Chrome REAL (NO chromium)
 RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 RUN apt-get install -y ./google-chrome-stable_current_amd64.deb
 
-# Limpiar
 RUN rm google-chrome-stable_current_amd64.deb
 
 WORKDIR /app
