@@ -3,10 +3,11 @@ import statistics
 import pandas as pd
 import requests
 import os
-from selenium.webdriver.chrome.options import Options
 from datetime import datetime
 
-from selenium.webdriver.chrome.service import Service
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 
 options = Options()
 options.add_argument("--headless=new")
