@@ -9,15 +9,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
-options = Options()
-options.add_argument("--headless=new")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-
-driver = webdriver.Chrome(options=options)
-
 # =========================
-# CONFIG (ENV VARIABLES)
+# CONFIG (ENV)
 # =========================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -29,7 +22,7 @@ balance_sim = BASE_BALANCE
 HISTORY_LIMIT = 300
 
 # =========================
-# SELENIUM (DOCKER READY)
+# SELENIUM (HEADLESS)
 # =========================
 
 options = Options()
@@ -39,14 +32,14 @@ options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-gpu")
 options.add_argument("--window-size=1920,1080")
 
-service = Service("/usr/bin/chromedriver")
+print("🌐 Iniciando navegador...")
 
-driver = webdriver.Chrome(service=service, options=options)
+driver = webdriver.Chrome(options=options)
 
-print("🌐 Abriendo Stake...")
 driver.get("https://stake.com/casino/games/aviator")
 
-time.sleep(20)  # tiempo para cargar
+print("⏳ Esperando carga...")
+time.sleep(20)
 
 # =========================
 # VARIABLES
@@ -74,6 +67,7 @@ last_result_seen = None
 
 def send_telegram(msg):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram no configurado")
         return
 
     try:
@@ -86,17 +80,27 @@ def send_telegram(msg):
         print("⚠️ Error Telegram:", e)
 
 # =========================
-# SCRAPER (AJUSTABLE)
+# SCRAPER (ROBUSTO)
 # =========================
 
 def get_last_result():
     try:
-        # ⚠️ ESTE SELECTOR PUEDE CAMBIAR
-        element = driver.find_element(By.CLASS_NAME, "payouts-block")
-        text = element.text.split("\n")[0]
-        value = float(text.replace("x", "").strip())
-        return value
-    except Exception:
+        elements = driver.find_elements(By.CSS_SELECTOR, "[class*=payout]")
+
+        for el in elements:
+            text = el.text.replace("x", "").strip()
+
+            try:
+                value = float(text)
+                if value > 1:
+                    return value
+            except:
+                continue
+
+        return None
+
+    except Exception as e:
+        print("Error scraping:", e)
         return None
 
 # =========================
@@ -181,61 +185,66 @@ print("🚀 Bot iniciado...")
 
 while True:
 
-    result = get_last_result()
+    try:
+        result = get_last_result()
 
-    if result is None:
+        if result is None:
+            time.sleep(1)
+            continue
+
+        if result == last_result_seen:
+            time.sleep(0.5)
+            continue
+
+        last_result_seen = result
+
+        print(f"🎲 Resultado: {result}x")
+
+        history.append(result)
+
+        if len(history) > HISTORY_LIMIT:
+            history.pop(0)
+
+        # 🔥 entrenar estrategias
+        simulate_all(result)
+
+        # 🧠 seleccionar mejor estrategia
+        best = select_best()
+
+        if best:
+            config = get_strategy(best)
+
+            signal_msg = (
+                f"🚀 ENTRAR\n"
+                f"Target: {config['target']}x\n"
+                f"Modo: {best.upper()}"
+            )
+
+            print(signal_msg)
+            send_telegram(signal_msg)
+
+            # 💰 simulación
+            bet = balance_sim * config["risk"]
+
+            if result >= config["target"]:
+                balance_sim += bet * (config["target"] - 1)
+                outcome = "WIN"
+            else:
+                balance_sim -= bet
+                outcome = "LOSS"
+
+            signals_log.append({
+                "time": datetime.now(),
+                "result": result,
+                "target": config["target"],
+                "outcome": outcome,
+                "balance": balance_sim
+            })
+
+        dashboard()
+
         time.sleep(1)
-        continue
 
-    if result == last_result_seen:
-        time.sleep(0.5)
-        continue
-
-    last_result_seen = result
-
-    print(f"🎲 Resultado: {result}x")
-
-    history.append(result)
-
-    if len(history) > HISTORY_LIMIT:
-        history.pop(0)
-
-    # 🔥 ENTRENAR TODAS LAS ESTRATEGIAS
-    simulate_all(result)
-
-    # 🧠 SELECCIÓN AUTOMÁTICA
-    best = select_best()
-
-    if best:
-        config = get_strategy(best)
-
-        signal_msg = (
-            f"🚀 ENTRAR\n"
-            f"Target: {config['target']}x\n"
-            f"Modo: {best.upper()}"
-        )
-
-        print(signal_msg)
-        send_telegram(signal_msg)
-
-        # 💰 SIMULACIÓN REAL
-        bet = balance_sim * config["risk"]
-
-        if result >= config["target"]:
-            balance_sim += bet * (config["target"] - 1)
-            outcome = "WIN"
-        else:
-            balance_sim -= bet
-            outcome = "LOSS"
-
-        signals_log.append({
-            "time": datetime.now(),
-            "result": result,
-            "target": config["target"],
-            "outcome": outcome,
-            "balance": balance_sim
-        })
-
-    dashboard()
-
-    time.sleep(1)
+    except Exception as e:
+        print("⚠️ Error en loop:", e)
+        time.sleep(2)
