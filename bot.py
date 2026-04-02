@@ -9,6 +9,14 @@ app = Flask(__name__)
 def home():
     return "BOT FUNCIONANDO"
 
+@app.route("/data", methods=["POST"])
+def data():
+    result = request.json["result"]
+    print(f"🎲 Recibido: {result}")
+    return {"status": "ok"}
+
+app.run(host="0.0.0.0", port=8080)
+
 # =========================
 # CONFIG
 # =========================
