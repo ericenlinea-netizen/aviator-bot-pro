@@ -1,49 +1,18 @@
-import time
-import statistics
+from flask import Flask, request
 import pandas as pd
 import requests
-import os
 from datetime import datetime
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+app = Flask(__name__)
 
 # =========================
-# CONFIG (ENV)
+# CONFIG
 # =========================
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_TOKEN = "TU_TOKEN"
+TELEGRAM_CHAT_ID = "TU_CHAT_ID"
 
-BASE_BALANCE = 100
-balance_sim = BASE_BALANCE
-
-HISTORY_LIMIT = 300
-
-# =========================
-# SELENIUM (HEADLESS)
-# =========================
-
-options = Options()
-options.add_argument("--headless=new")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-gpu")
-options.add_argument("--window-size=1920,1080")
-
-print("🌐 Iniciando navegador...")
-
-driver = webdriver.Chrome(options=options)
-
-driver.get("https://stake.com/casino/games/aviator")
-
-print("⏳ Esperando carga...")
-time.sleep(20)
-
-# =========================
-# VARIABLES
-# =========================
+balance = 100
 
 history = []
 signals_log = []
@@ -54,92 +23,48 @@ strategies = [
     {"name": "aggressive", "target": 2.0, "risk": 0.03},
 ]
 
-strategy_stats = {
-    s["name"]: {"wins": 0, "losses": 0, "profit": 0}
-    for s in strategies
-}
-
-last_result_seen = None
+stats = {s["name"]: {"wins": 0, "losses": 0, "profit": 0} for s in strategies}
 
 # =========================
 # TELEGRAM
 # =========================
 
-def send_telegram(msg):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram no configurado")
-        return
-
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": msg
-        })
-    except Exception as e:
-        print("⚠️ Error Telegram:", e)
+def send(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
 
 # =========================
-# SCRAPER (ROBUSTO)
-# =========================
-
-def get_last_result():
-    try:
-        elements = driver.find_elements(By.CSS_SELECTOR, "[class*=payout]")
-
-        for el in elements:
-            text = el.text.replace("x", "").strip()
-
-            try:
-                value = float(text)
-                if value > 1:
-                    return value
-            except:
-                continue
-
-        return None
-
-    except Exception as e:
-        print("Error scraping:", e)
-        return None
-
-# =========================
-# ESTRATEGIAS
+# LOGICA
 # =========================
 
 def simulate_all(result):
-    global balance_sim
+    global balance
 
     for s in strategies:
         name = s["name"]
-        target = s["target"]
-        risk = s["risk"]
+        bet = balance * s["risk"]
 
-        bet = balance_sim * risk
-
-        if result >= target:
-            profit = bet * (target - 1)
-            strategy_stats[name]["wins"] += 1
+        if result >= s["target"]:
+            profit = bet * (s["target"] - 1)
+            stats[name]["wins"] += 1
         else:
             profit = -bet
-            strategy_stats[name]["losses"] += 1
+            stats[name]["losses"] += 1
 
-        strategy_stats[name]["profit"] += profit
+        stats[name]["profit"] += profit
 
-def select_best():
+def best_strategy():
     best = None
     best_score = -999
 
-    for name, stats in strategy_stats.items():
-        total = stats["wins"] + stats["losses"]
+    for name, s in stats.items():
+        total = s["wins"] + s["losses"]
 
-        if total < 20:
+        if total < 10:
             continue
 
-        winrate = stats["wins"] / total
-        profit = stats["profit"]
-
-        score = profit + (winrate * 10)
+        winrate = s["wins"] / total
+        score = s["profit"] + winrate * 10
 
         if score > best_score:
             best_score = score
@@ -147,104 +72,51 @@ def select_best():
 
     return best
 
-def get_strategy(name):
-    for s in strategies:
-        if s["name"] == name:
-            return s
-    return None
-
 # =========================
-# DASHBOARD
+# ENDPOINT
 # =========================
 
-def dashboard():
-    if not signals_log:
-        return
+@app.route("/data", methods=["POST"])
+def data():
+    global balance
 
-    df = pd.DataFrame(signals_log)
+    result = request.json["result"]
 
-    wins = (df["outcome"] == "WIN").sum()
-    total = len(df)
+    print(f"🎲 {result}")
 
-    winrate = (wins / total) * 100
-    profit = balance_sim - BASE_BALANCE
+    history.append(result)
 
-    print("\n📊 ===== DASHBOARD =====")
-    print(f"Señales: {total}")
-    print(f"Winrate: {winrate:.2f}%")
-    print(f"Profit: {profit:.2f}")
-    print("=======================\n")
+    simulate_all(result)
 
-    df.to_csv("reporte.csv", index=False)
+    best = best_strategy()
+
+    if best:
+        config = next(s for s in strategies if s["name"] == best)
+
+        msg = f"🚀 ENTRAR\nTarget: {config['target']}x\nModo: {best.upper()}"
+        print(msg)
+        send(msg)
+
+        bet = balance * config["risk"]
+
+        if result >= config["target"]:
+            balance += bet * (config["target"] - 1)
+            outcome = "WIN"
+        else:
+            balance -= bet
+            outcome = "LOSS"
+
+        signals_log.append({
+            "time": str(datetime.now()),
+            "result": result,
+            "strategy": best,
+            "balance": balance
+        })
+
+    return {"status": "ok"}
 
 # =========================
-# LOOP PRINCIPAL
+# RUN
 # =========================
 
-print("🚀 Bot iniciado...")
-
-while True:
-
-    try:
-        result = get_last_result()
-
-        if result is None:
-            time.sleep(1)
-            continue
-
-        if result == last_result_seen:
-            time.sleep(0.5)
-            continue
-
-        last_result_seen = result
-
-        print(f"🎲 Resultado: {result}x")
-
-        history.append(result)
-
-        if len(history) > HISTORY_LIMIT:
-            history.pop(0)
-
-        # 🔥 entrenar estrategias
-        simulate_all(result)
-
-        # 🧠 seleccionar mejor estrategia
-        best = select_best()
-
-        if best:
-            config = get_strategy(best)
-
-            signal_msg = (
-                f"🚀 ENTRAR\n"
-                f"Target: {config['target']}x\n"
-                f"Modo: {best.upper()}"
-            )
-
-            print(signal_msg)
-            send_telegram(signal_msg)
-
-            # 💰 simulación
-            bet = balance_sim * config["risk"]
-
-            if result >= config["target"]:
-                balance_sim += bet * (config["target"] - 1)
-                outcome = "WIN"
-            else:
-                balance_sim -= bet
-                outcome = "LOSS"
-
-            signals_log.append({
-                "time": datetime.now(),
-                "result": result,
-                "target": config["target"],
-                "outcome": outcome,
-                "balance": balance_sim
-            })
-
-        dashboard()
-
-        time.sleep(1)
-
-    except Exception as e:
-        print("⚠️ Error en loop:", e)
-        time.sleep(2)
+app.run(host="0.0.0.0", port=8080)
